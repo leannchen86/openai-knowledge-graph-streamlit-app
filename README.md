@@ -4,6 +4,11 @@ This AI chatbot integrates a Spacy-LLM constructed knowledge graph with an advan
 
 Highlights
 
-Advanced RAG System: Utilizes OpenAI's language models for relevant, informed responses.
-Knowledge Graph Integration: Leverages Neo4j's comprehensive network of entity relationships for deeper insights.
-Streamlit Interface: Offers a user-friendly, easy-to-navigate experience.
+# Advanced RAG System: 
+Utilizes OpenAI's language models for relevant, informed responses.
+
+# Knowledge Graph Integration:
+Leverages Neo4j's comprehensive network of entity relationships for deeper insights.
+
+# Streamlit Interface:
+Offers a user-friendly, easy-to-navigate experience.
