@@ -13,4 +13,5 @@ Leverages Neo4j's comprehensive network of entity relationships for deeper insig
 3. Streamlit Interface:
 Offers a user-friendly, easy-to-navigate experience.
 
-Note: retrievers.py and chain.py are from langchain's neo4j_advanced_rag template: https://github.com/langchain-ai/langchain/tree/master/templates/neo4j-advanced-rag?ref=blog.langchain.dev
+Note: retrievers.py and chain.py are from langchain's neo4j_advanced_rag template: 
+https://github.com/langchain-ai/langchain/tree/master/templates/neo4j-advanced-rag?ref=blog.langchain.dev
