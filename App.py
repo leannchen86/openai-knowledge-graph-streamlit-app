@@ -164,8 +164,8 @@ with st.sidebar:
     openai_api_key = st.text_input("OpenAI API Key", key="langchain_search_api_key_openai", type="password")
     "[Get an OpenAI API key](https://platform.openai.com/account/api-keys)"
 
-def combine_contexts(structured, unstructured):
-    client = OpenAI(api_key=openai_api_key)
+def combine_contexts(structured, unstructured, client):
+    
     messages = [{'role': 'system', 'content': 'You are an assistant of an advanced retrieval augmented system,\
                  who prioritizes accuracy and is very context-aware.\
                  Pleass summarize text from the following and generate\
@@ -180,7 +180,7 @@ def combine_contexts(structured, unstructured):
 
 # Initialize OpenAI API key and Chat model
 if openai_api_key:
-    model = ChatOpenAI(api_key=openai_api_key)
+    client = OpenAI(api_key=openai_api_key)
     os.environ["OPENAI_API_KEY"] = openai_api_key
     from retrievers import initialize_retrievers
     from chain import initialize_chain, Question
@@ -218,7 +218,7 @@ if prompt := st.chat_input(placeholder="Ask a question"):
             )
         config = Config(height=600, width=800, directed=True, nodeHighlightBehavior=True, highlightColor="#F7A7A6")
         agraph(nodes=nodes, edges=edges, config=config)
-        final_ans = combine_contexts(response_structured, response_nonstructured)
+        final_ans = combine_contexts(response_structured, response_nonstructured, client)
         st.session_state.messages.append({"role": "assistant", "content": final_ans})
         st.chat_message("assistant").write(final_ans)
 
