@@ -1,33 +1,9 @@
 import streamlit as st
 from langchain.chat_models import ChatOpenAI
 from langchain.graphs import Neo4jGraph
-from retrievers import typical_rag
-from chain import chain, Question
 from streamlit_agraph import agraph, Node, Edge, Config
 from neo4j import GraphDatabase
 import os
-import openai
-# from langchain.agents import initialize_agent
-st.title("The OpenAI Saga")
-
-NEO4J_URI= st.secrets["NEO4J_URI"]
-NEO4J_USERNAME= st.secrets["NEO4J_USERNAME"]
-NEO4J_PASSWORD= st.secrets["NEO4J_PASSWORD"]
-
-graph = Neo4jGraph(
-    url=NEO4J_URI,
-    username=NEO4J_USERNAME,
-    password=NEO4J_PASSWORD
-)
-
-with st.sidebar:
-    openai_api_key = st.text_input("OpenAI API Key", key="langchain_search_api_key_openai", type="password")
-    "[Get an OpenAI API key](https://platform.openai.com/account/api-keys)"
-openai.api_key = openai_api_key
-
-# Initialize OpenAI API key and Chat model
-if openai_api_key:
-    model = ChatOpenAI(api_key=openai_api_key)
 
 # Function to process the query and return a response
 def process_query(query):
@@ -36,12 +12,26 @@ def process_query(query):
     intermediate_steps = result['intermediate_steps']
     final_answer = result['result']
     generated_cypher = intermediate_steps[0]['query']
-    nl_response = final_answer
+    response_structured = final_answer
     
     # Fetch graph data using the Cypher query
-    nodes, edges = fetch_graph_data(direct_cypher_query=generated_cypher, intermediate_steps=intermediate_steps)
+    nodes, edges = fetch_graph_data(nodesType=None, relType=None, direct_cypher_query=generated_cypher, intermediate_steps=intermediate_steps)
     
-    return nl_response, visual, nodes, edges
+    return response_structured, nodes, edges
+
+# Function to fetch data from Neo4j
+def fetch_graph_data(nodesType=None, relType=None, direct_cypher_query=None, intermediate_steps=None):
+    # Use the direct Cypher query if provided
+    if direct_cypher_query:
+        cypher_query = direct_cypher_query
+    else:
+        # Construct the Cypher query based on selected filters
+        cypher_query = construct_cypher_query(nodesType, relType)
+    context = intermediate_steps[0]['context']
+    print(context, type(context))
+    nodes, edges = process_graph_result(context)
+    return nodes, edges
+
 
 # Function to construct the Cypher query based on selected filters
 def construct_cypher_query(node_types, rel_types):
@@ -69,7 +59,7 @@ def process_graph_result(context):
     edges = []
     node_names = set()  # This defines node_names to track unique nodes
 
-    for record in context:  # Adjusted to access 'Full Context' from the result
+    for record in context: 
         # Process nodes
         p_name = record['p.name']
         o_name = record['o.name']
@@ -88,17 +78,19 @@ def process_graph_result(context):
 
     return nodes, edges
 
-# Function to fetch data from Neo4j
-def fetch_graph_data(nodesType=None, relType=None, direct_cypher_query=None, intermediate_steps=None):
-    # Use the direct Cypher query if provided
-    if direct_cypher_query:
-        cypher_query = direct_cypher_query
-    else:
-        # Construct the Cypher query based on selected filters
-        cypher_query = construct_cypher_query(nodesType, relType)
-    context = intermediate_steps[0]['context']
-    nodes, edges = process_graph_result(context)
-    return nodes, edges
+
+# from langchain.agents import initialize_agent
+st.title("The OpenAI Saga")
+
+NEO4J_URI= st.secrets["NEO4J_URI"]
+NEO4J_USERNAME= st.secrets["NEO4J_USERNAME"]
+NEO4J_PASSWORD= st.secrets["NEO4J_PASSWORD"]
+
+graph = Neo4jGraph(
+    url=NEO4J_URI,
+    username=NEO4J_USERNAME,
+    password=NEO4J_PASSWORD
+)
 
 # Fetch the unique node types and relationship types for sidebar filters
 node_types = ['Person', 'Organization', 'Group', 'Topic']
@@ -132,6 +124,20 @@ if (selected_node_types != st.session_state.prev_node_types or
     # Render the graph using agraph with the specified configuration
     agraph(nodes=nodes, edges=edges, config=config)
 
+
+with st.sidebar:
+    openai_api_key = st.text_input("OpenAI API Key", key="langchain_search_api_key_openai", type="password")
+    "[Get an OpenAI API key](https://platform.openai.com/account/api-keys)"
+
+# Initialize OpenAI API key and Chat model
+if openai_api_key:
+    model = ChatOpenAI(api_key=openai_api_key)
+    os.environ["OPENAI_API_KEY"] = openai_api_key
+    from retrievers import initialize_retrievers
+    from chain import initialize_chain, Question
+    initialize_retrievers(openai_api_key)
+    chain_unstructuredtxt = initialize_chain(openai_api_key)
+
 # Chat interface
 if "messages" not in st.session_state:
     st.session_state["messages"] = [{"role": "assistant", "content": "Hi there, ask me a question."}]
@@ -156,8 +162,8 @@ if prompt := st.chat_input(placeholder="Ask a question"):
         # Update session state with new message
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.chat_message("user").write(prompt)
-        response, nodes, edges= process_query(prompt)
+        response_structured, nodes, edges= process_query(prompt)
         config = Config(height=600, width=800, directed=True, nodeHighlightBehavior=True, highlightColor="#F7A7A6")
         agraph(nodes=nodes, edges=edges, config=config)
-        st.session_state.messages.append({"role": "assistant", "content": response})
-        st.chat_message("assistant").write(response)
+        st.session_state.messages.append({"role": "assistant", "content": response_structured})
+        st.chat_message("assistant").write(response_structured)
