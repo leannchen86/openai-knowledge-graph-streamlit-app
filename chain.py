@@ -7,14 +7,19 @@ from langchain.schema.output_parser import StrOutputParser
 from langchain.schema.runnable import ConfigurableField, RunnableParallel
 import os
 
-from retrievers import (
-    hypothetic_question_vectorstore,
-    parent_vectorstore,
-    summary_vectorstore,
-    typical_rag,
-)
+# from retrievers import (
+#     hypothetic_question_vectorstore,
+#     parent_vectorstore,
+#     summary_vectorstore,
+#     typical_rag,
+# )
 
-def initialize_chain(openai_api_key):
+# Add typing for input
+class Question(BaseModel):
+    question: str
+
+
+def initialize_chain(openai_api_key, typical_rag, parent_vectorstore, hypothetic_question_vectorstore, summary_vectorstore):
     os.environ["OPENAI_API_KEY"] = openai_api_key
     template = """Answer the question based only on the following context:
     {context}
@@ -45,11 +50,7 @@ def initialize_chain(openai_api_key):
         | StrOutputParser()
     )
 
-
-    # Add typing for input
-    class Question(BaseModel):
-        question: str
-
-
     chain = chain.with_types(input_type=Question)
+
     return chain
+

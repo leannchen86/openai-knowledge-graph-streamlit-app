@@ -4,6 +4,9 @@ from langchain.graphs import Neo4jGraph
 from streamlit_agraph import agraph, Node, Edge, Config
 from neo4j import GraphDatabase
 import os
+from openai import OpenAI
+
+client = OpenAI()
 
 # Function to process the query and return a response
 def process_query(query):
@@ -23,13 +26,18 @@ def process_query(query):
 def fetch_graph_data(nodesType=None, relType=None, direct_cypher_query=None, intermediate_steps=None):
     # Use the direct Cypher query if provided
     if direct_cypher_query:
-        cypher_query = direct_cypher_query
+        context = intermediate_steps[1]['context']
+        nodes, edges = process_graph_result(context)
     else:
-        # Construct the Cypher query based on selected filters
-        cypher_query = construct_cypher_query(nodesType, relType)
-    context = intermediate_steps[0]['context']
-    print(context, type(context))
-    nodes, edges = process_graph_result(context)
+        if nodesType or relType:
+            # Construct the Cypher query based on selected filters
+            cypher_query = construct_cypher_query(nodesType, relType)
+            with GraphDatabase.driver(os.environ["NEO4J_URI"], 
+                                    auth=(os.environ["NEO4J_USERNAME"], 
+                                            os.environ["NEO4J_PASSWORD"])).session() as session:
+                result = session.run(cypher_query)
+                nodes, edges = process_graph_result_select(result)
+    
     return nodes, edges
 
 
@@ -54,12 +62,12 @@ def construct_cypher_query(node_types, rel_types):
     
     return query
 
-def process_graph_result(context):
+def process_graph_result(result):
     nodes = []
     edges = []
     node_names = set()  # This defines node_names to track unique nodes
 
-    for record in context: 
+    for record in result: 
         # Process nodes
         p_name = record['p.name']
         o_name = record['o.name']
@@ -78,6 +86,34 @@ def process_graph_result(context):
 
     return nodes, edges
 
+def process_graph_result_select(result):
+    nodes = []
+    edges = []
+    node_names = set()  # This defines node_names to track unique nodes
+
+    for record in result: 
+        # Process nodes
+        p = record['p']
+        n = record['n']
+        p_name = p['name']
+        n_name = n['name']
+
+       # Add nodes if they don't already exist
+        if p_name not in node_names:
+            nodes.append(Node(id=p_name, label=p_name, size=5, shape="circle"))
+            node_names.add(p_name)
+        if n_name not in node_names:
+            nodes.append(Node(id=n_name, label=n_name, size=5, shape="circle"))
+            node_names.add(n_name)
+
+        # Process edges, include the date in the label if it exists
+        r = record['r']
+        relationship_label = r.type
+        if 'date' in r:
+            relationship_label = f"{r.type} ({r['date']})"
+        edges.append(Edge(source=p_name, target=n_name, label=relationship_label))
+    
+    return nodes, edges
 
 # from langchain.agents import initialize_agent
 st.title("The OpenAI Saga")
@@ -87,10 +123,9 @@ NEO4J_USERNAME= st.secrets["NEO4J_USERNAME"]
 NEO4J_PASSWORD= st.secrets["NEO4J_PASSWORD"]
 
 graph = Neo4jGraph(
-    url=NEO4J_URI,
-    username=NEO4J_USERNAME,
-    password=NEO4J_PASSWORD
-)
+    url=os.environ["NEO4J_URI"],
+    username=os.environ["NEO4J_USERNAME"],
+    password=os.environ["NEO4J_PASSWORD"])
 
 # Fetch the unique node types and relationship types for sidebar filters
 node_types = ['Person', 'Organization', 'Group', 'Topic']
@@ -118,7 +153,7 @@ if (selected_node_types != st.session_state.prev_node_types or
     st.session_state.prev_relationship_types = selected_relationship_types
     # Construct and fetch new graph data
     cypher_query = construct_cypher_query(selected_node_types, selected_relationship_types)
-    nodes, edges = fetch_graph_data(selected_node_types=selected_node_types, selected_relationship_types=selected_relationship_types)
+    nodes, edges = fetch_graph_data(nodesType=selected_node_types, relType=selected_relationship_types)
     # Define the configuration for the graph visualization
     config = Config(height=600, width=800, directed=True, nodeHighlightBehavior=True, highlightColor="#F7A7A6")
     # Render the graph using agraph with the specified configuration
@@ -129,14 +164,28 @@ with st.sidebar:
     openai_api_key = st.text_input("OpenAI API Key", key="langchain_search_api_key_openai", type="password")
     "[Get an OpenAI API key](https://platform.openai.com/account/api-keys)"
 
+def combine_contexts(structured, unstructured):
+    client = OpenAI(api_key=openai_api_key)
+    messages = [{'role': 'system', 'content': 'You are an assistant of an advanced retrieval augmented system,\
+                 who prioritizes accuracy and is very context-aware.\
+                 Pleass summarize text from the following and generate\
+                 a comprehensive, logical and context_aware answer.'},
+                {'role': 'user', 'content': structured + unstructured}]
+    completion = client.chat.completions.create(model="gpt-4",
+                                                messages=messages,
+                                                temperature=0)
+    response = completion.choices[0].message.content
+    
+    return response
+
 # Initialize OpenAI API key and Chat model
 if openai_api_key:
     model = ChatOpenAI(api_key=openai_api_key)
     os.environ["OPENAI_API_KEY"] = openai_api_key
     from retrievers import initialize_retrievers
     from chain import initialize_chain, Question
-    initialize_retrievers(openai_api_key)
-    chain_unstructuredtxt = initialize_chain(openai_api_key)
+    typical_rag, parent_vectorstore, hypothetic_question_vectorstore, summary_vectorstore = initialize_retrievers(openai_api_key)
+    chain_txt = initialize_chain(openai_api_key, typical_rag, parent_vectorstore, hypothetic_question_vectorstore, summary_vectorstore)
 
 # Chat interface
 if "messages" not in st.session_state:
@@ -151,7 +200,7 @@ if prompt := st.chat_input(placeholder="Ask a question"):
     else:
         # Display response
         # Initialize the GraphCypherQAChain from chain.py
-        from chain import GraphCypherQAChain
+        from langchain.chains import GraphCypherQAChain
         cypher_chain = GraphCypherQAChain.from_llm(
             cypher_llm=ChatOpenAI(temperature=0, model_name='gpt-4', api_key=openai_api_key),
             qa_llm=ChatOpenAI(temperature=0, api_key=openai_api_key),
@@ -163,7 +212,13 @@ if prompt := st.chat_input(placeholder="Ask a question"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.chat_message("user").write(prompt)
         response_structured, nodes, edges= process_query(prompt)
+        response_nonstructured = chain_txt.invoke(
+                {"question": prompt},
+                {"configurable": {"strategy": "parent_strategy"}},
+            )
         config = Config(height=600, width=800, directed=True, nodeHighlightBehavior=True, highlightColor="#F7A7A6")
         agraph(nodes=nodes, edges=edges, config=config)
-        st.session_state.messages.append({"role": "assistant", "content": response_structured})
-        st.chat_message("assistant").write(response_structured)
+        final_ans = combine_contexts(response_structured, response_nonstructured)
+        st.session_state.messages.append({"role": "assistant", "content": final_ans})
+        st.chat_message("assistant").write(final_ans)
+
