@@ -215,8 +215,8 @@ if prompt := st.chat_input(placeholder="Ask a question"):
                 {"configurable": {"strategy": "parent_strategy"}},
             )
         config = Config(height=600, width=800, directed=True, nodeHighlightBehavior=True, highlightColor="#F7A7A6")
-        agraph(nodes=nodes, edges=edges, config=config)
         final_ans = combine_contexts(response_structured, response_nonstructured, client)
         st.session_state.messages.append({"role": "assistant", "content": final_ans})
         st.chat_message("assistant").write(final_ans)
+        agraph(nodes=nodes, edges=edges, config=config)
 
