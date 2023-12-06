@@ -6,8 +6,6 @@ from neo4j import GraphDatabase
 import os
 from openai import OpenAI
 
-client = OpenAI()
-
 # Function to process the query and return a response
 def process_query(query):
     # Use GraphCypherQAChain to get a Cypher query and a natural language response
